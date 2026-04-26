@@ -1,376 +1,532 @@
-import os
-import subprocess
-import hashlib
-import base64
-from pathlib import Path
-from datetime import datetime
-
 import streamlit as st
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography import x509
+from cryptography.x509.oid import NameOID
+import hashlib
+import os
+import datetime
 
-APP_DIR = Path("e2ee_lab_workspace")
-APP_DIR.mkdir(exist_ok=True)
-
-st.set_page_config(page_title="E2EE Lab for Food Delivery Security", layout="wide")
-
-
-def run_command(command: list[str], cwd: Path | None = None, input_text: str | None = None):
-    try:
-        result = subprocess.run(
-            command,
-            input=input_text,
-            text=True,
-            capture_output=True,
-            cwd=str(cwd) if cwd else None,
-            check=False,
-        )
-        return result.returncode, result.stdout, result.stderr
-    except FileNotFoundError:
-        return 127, "", "Command not found. Make sure OpenSSL is installed and available in PATH."
-    except Exception as e:
-        return 1, "", str(e)
-
-
-def write_text_file(path: Path, content: str):
-    path.write_text(content, encoding="utf-8")
-
-
-def read_text_file(path: Path):
-    if path.exists():
-        return path.read_text(encoding="utf-8", errors="replace")
-    return ""
-
-
-def read_binary_preview(path: Path, size: int = 128):
-    if not path.exists():
-        return ""
-    data = path.read_bytes()[:size]
-    return data.hex(" ")
-
-
-def section_header(title: str, description: str):
-    st.subheader(title)
-    st.write(description)
-
-
-st.title("End-to-End Encryption Lab App")
-st.write(
-    "This app helps you run the five cryptography experiments for your Internet Security assignment. "
-    "It generates files, runs OpenSSL commands, shows output, and gives you evidence you can use in your report."
+st.set_page_config(
+    page_title="FD Data Protection Lab",
+    page_icon="🔐",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-with st.sidebar:
-    st.header("Lab Controls")
-    st.write(f"Workspace: `{APP_DIR.resolve()}`")
-    if st.button("Check OpenSSL"):
-        code, out, err = run_command(["openssl", "version"], cwd=APP_DIR)
-        if code == 0:
-            st.success(out.strip())
-        else:
-            st.error(err or "OpenSSL not available")
-    st.info("Install Streamlit with: pip install streamlit")
-    st.info("Run the app with: streamlit run app.py")
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+st.markdown("""
+<style>
+
+/* ===== APP BACKGROUND ===== */
+[data-testid="stAppViewContainer"] {
+    background-color: #191f22;
+}
+
+/* ===== MAIN CONTAINER ===== */
+[data-testid="stMainBlockContainer"] {
+    max-width: 1100px;
+    padding-top: 1.5rem;
+}
+
+/* ===== FONT ===== */
+html, body, [class*="css"] {
+    font-family: "Segoe UI", Arial, sans-serif;
+}
+
+/* ===== TEXT ===== */
+h1, h2, h3 {
+    color: #f9fafb;
+}
+
+p, span, label {
+    color: #e5e7eb;
+}
+
+/* ===== SIDEBAR ===== */
+[data-testid="stSidebar"] {
+    background-color: #191f22;
+    border-right: 1px solid #2f3a40;   /* 🔥 vertical divider */
+}
+
+[data-testid="stSidebar"] * {
+    color: #f9fafb;
+}
+
+/* ===== MAIN AREA SEPARATOR (extra clarity) ===== */
+[data-testid="stMain"] {
+    border-left: 1px solid #2f3a40;    /* 🔥 ensures clear separation */
+}
+
+/* ===== BUTTONS ===== */
+.stButton > button,
+.stDownloadButton > button {
+    background-color: #2563eb;
+    color: white;
+    border-radius: 8px;
+    font-weight: 600;
+    border: none;
+}
+
+.stButton > button:hover,
+.stDownloadButton > button:hover {
+    background-color: #1d4ed8;
+}
+
+/* ===== FILE UPLOADER ===== */
+[data-testid="stFileUploader"] {
+    background-color: #2a3136;
+    border-radius: 10px;
+    padding: 0.8rem;
+    border: 1px solid #3f4a50;
+}
+
+/* ===== FIX STREAMLIT HEADER (DO NOT HIDE) ===== */
+[data-testid="stHeader"] {
+    background: transparent;   /* keep burger menu visible */
+}
+
+/* ===== BURGER ICON VISIBILITY ===== */
+[data-testid="collapsedControl"] {
+    color: #ffffff !important;
+}
+
+/* ===== REMOVE EXTRA SPACE ===== */
+.block-container {
+    padding-top: 1rem;
+}
+
+/* ===== HORIZONTAL LINE FIX ===== */
+hr {
+    border: none;
+    border-top: 1px solid #3f4a50;
+}
+
+</style>
+""", unsafe_allow_html=True)
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-# -----------------------------
-# Experiment 1: RSA
-# -----------------------------
-with st.expander("Experiment 1: RSA-2048 Key Generation and Encryption", expanded=True):
-    section_header(
-        "RSA-2048 for secure token protection",
-        "This experiment shows how asymmetric encryption can protect a sensitive value such as an API token or payment token."
-    )
 
-    rsa_plaintext = st.text_input(
-        "Plaintext message",
-        value="API_TOKEN=QB-ORDER-SECURE-1234",
-        key="rsa_plaintext"
-    )
+menu = st.sidebar.radio(
+    "FD Data Protection Lab",
+    [
+         "Home",
+        "AES Data Protection",
+        "RSA Key Management",
+        "RSA Token Encryption",
+        "Password Hashing",
+        "TLS Certificate",
+        "ISO Security Mapping"
+    ]
+)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("1. Generate RSA keys"):
-            priv_path = APP_DIR / "server_private.pem"
-            pub_path = APP_DIR / "server_public.pem"
-            code, out, err = run_command(
-                ["openssl", "genpkey", "-algorithm", "RSA", "-out", str(priv_path), "-pkeyopt", "rsa_keygen_bits:2048"],
-                cwd=APP_DIR,
-            )
-            if code == 0:
-                code2, out2, err2 = run_command(
-                    ["openssl", "rsa", "-pubout", "-in", str(priv_path), "-out", str(pub_path)],
-                    cwd=APP_DIR,
-                )
-                if code2 == 0:
-                    st.success("RSA private and public keys generated.")
-                else:
-                    st.error(err2)
-            else:
-                st.error(err)
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+if menu == "Home":
+    st.markdown("""
+<h1 style="font-size:36px; line-height:1.2; margin-bottom:8px;">
+CSYM020 Internet Security – Data Protection Lab
+</h1>
+""", unsafe_allow_html=True)
+    st.caption("FD Data Protection Lab")
+    st.subheader("Secure Online Food Delivery Application Prototype")
 
-    with col2:
-        if st.button("2. Save plaintext and encrypt"):
-            plain_path = APP_DIR / "token.txt"
-            enc_path = APP_DIR / "token_encrypted.bin"
-            pub_path = APP_DIR / "server_public.pem"
-            write_text_file(plain_path, rsa_plaintext)
-            if not pub_path.exists():
-                st.error("Public key not found. Generate keys first.")
-            else:
-                code, out, err = run_command(
-                    ["openssl", "pkeyutl", "-encrypt", "-pubin", "-inkey", str(pub_path), "-in", str(plain_path), "-out", str(enc_path)],
-                    cwd=APP_DIR,
-                )
-                if code == 0:
-                    st.success("Plaintext saved and encrypted.")
-                else:
-                    st.error(err)
+    st.write("""
+    This application demonstrates practical security controls for protecting sensitive data 
+    in an online food delivery system.
+    """)
 
-    if st.button("3. Decrypt ciphertext"):
-        enc_path = APP_DIR / "token_encrypted.bin"
-        dec_path = APP_DIR / "token_decrypted.txt"
-        priv_path = APP_DIR / "server_private.pem"
-        if not priv_path.exists() or not enc_path.exists():
-            st.error("Missing private key or encrypted file.")
-        else:
-            code, out, err = run_command(
-                ["openssl", "pkeyutl", "-decrypt", "-inkey", str(priv_path), "-in", str(enc_path), "-out", str(dec_path)],
-                cwd=APP_DIR,
-            )
-            if code == 0:
-                st.success("Ciphertext decrypted successfully.")
-            else:
-                st.error(err)
+    st.markdown("""
+    ### Implemented Security Modules
 
-    st.code(read_text_file(APP_DIR / "token.txt") or "No plaintext file yet.")
-    st.text_area("Encrypted binary preview", value=read_binary_preview(APP_DIR / "token_encrypted.bin"), height=120)
-    st.code(read_text_file(APP_DIR / "token_decrypted.txt") or "No decrypted file yet.")
+    1. **AES Data Protection** - encrypt and decrypt customer/order files  
+    2. **RSA Key Management** - generate public and private keys  
+    3. **RSA Token Encryption** - protect payment/API tokens  
+    4. **Password Hashing** - demonstrate SHA-256, SHA-512, salting, and avalanche effect  
+    5. **TLS Certificate** - generate certificate files for server identity  
+    6. **ISO Security Mapping** - map practical features to ISO 27001/27002 controls  
+    """)
 
-    st.markdown(
-        "**What the code does:** `genpkey` creates the RSA private key, `rsa -pubout` extracts the public key, "
-        "`pkeyutl -encrypt` encrypts the file with the public key, and `pkeyutl -decrypt` recovers it with the private key."
-    )
+    st.info("Use the sidebar to select a security module.")
 
 
-# -----------------------------
-# Experiment 2: AES-256-CBC
-# -----------------------------
-with st.expander("Experiment 2: AES-256-CBC File Encryption"):
-    section_header(
-        "AES-256-CBC for data at rest",
-        "This experiment shows how symmetric encryption can protect stored customer data and order backups."
-    )
 
-    aes_plaintext = st.text_area(
-        "Plaintext customer data",
-        value="Name: John Doe | Address: 12 London Road | Card: 4111111111111111 | Order: Pizza",
-        key="aes_plaintext"
-    )
-    aes_password = st.text_input("Encryption password", value="test123", type="password")
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    if st.button("1. Save plaintext file"):
-        write_text_file(APP_DIR / "orders.txt", aes_plaintext)
-        st.success("Plaintext file saved.")
+#This experiment shows that customer and order data can be encrypted before storage. 
+#If an attacker steals the file, the data is unreadable without the key.
 
-    if st.button("2. Encrypt file with AES-256-CBC"):
-        plain_path = APP_DIR / "orders.txt"
-        enc_path = APP_DIR / "orders.enc"
-        if not plain_path.exists():
-            st.error("Create the plaintext file first.")
-        else:
-            code, out, err = run_command(
-                ["openssl", "enc", "-aes-256-cbc", "-salt", "-pbkdf2", "-in", str(plain_path), "-out", str(enc_path), "-pass", f"pass:{aes_password}"],
-                cwd=APP_DIR,
-            )
-            if code == 0:
-                st.success("File encrypted successfully.")
-            else:
-                st.error(err)
-
-    if st.button("3. Decrypt AES file"):
-        enc_path = APP_DIR / "orders.enc"
-        dec_path = APP_DIR / "orders_decrypted.txt"
-        if not enc_path.exists():
-            st.error("Encrypted file not found.")
-        else:
-            code, out, err = run_command(
-                ["openssl", "enc", "-aes-256-cbc", "-d", "-pbkdf2", "-in", str(enc_path), "-out", str(dec_path), "-pass", f"pass:{aes_password}"],
-                cwd=APP_DIR,
-            )
-            if code == 0:
-                st.success("File decrypted successfully.")
-            else:
-                st.error(err)
-
-    st.code(read_text_file(APP_DIR / "orders.txt") or "No plaintext file yet.")
-    st.text_area("Encrypted file hex preview", value=read_binary_preview(APP_DIR / "orders.enc"), height=120)
-    st.code(read_text_file(APP_DIR / "orders_decrypted.txt") or "No decrypted file yet.")
-
-    st.markdown(
-        "**What the code does:** `enc -aes-256-cbc` applies AES in CBC mode. `-salt` adds randomness. `-pbkdf2` derives the key more securely from the passphrase. "
-        "The same password is needed to decrypt the file."
-    )
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-# -----------------------------
-# Experiment 3: Hashing and Salting
-# -----------------------------
-with st.expander("Experiment 3: Password Hashing and Avalanche Effect"):
-    section_header(
-        "SHA-256, SHA-512, salting, and avalanche effect",
-        "This experiment shows that passwords should be stored as hashes, not plaintext. It also shows how one small change creates a very different hash."
-    )
+if menu == "AES Data Protection":
+    st.header("Experiment 1: AES File Encryption")
 
-    password_1 = st.text_input("Password 1", value="SecurePass123")
-    password_2 = st.text_input("Password 2", value="SecurePass124")
+    uploaded_file = st.file_uploader("Upload customer/order file", type=["txt", "csv"])
 
-    if st.button("Run hashing experiment"):
-        salt = os.urandom(16)
-        sha256_1 = hashlib.sha256(password_1.encode()).hexdigest()
-        sha512_1 = hashlib.sha512(password_1.encode()).hexdigest()
-        sha256_2 = hashlib.sha256(password_2.encode()).hexdigest()
-        salted = hashlib.sha256(salt + password_1.encode()).hexdigest()
+    if uploaded_file:
+        file_data = uploaded_file.read()
 
-        st.write("Original password:", password_1)
-        st.code(sha256_1, language="text")
-        st.write("SHA-512 of original password:")
-        st.code(sha512_1, language="text")
-        st.write("Second password with one small change:", password_2)
-        st.code(sha256_2, language="text")
-        st.write("Salt in hex:")
-        st.code(salt.hex(), language="text")
-        st.write("Salted SHA-256:")
-        st.code(salted, language="text")
+        st.subheader("Original File Content")
+        st.code(file_data.decode(errors="ignore"))
 
-        st.markdown(
-            "**What the code does:** `hashlib.sha256()` and `hashlib.sha512()` create one-way hashes. `os.urandom(16)` generates a random 16-byte salt. "
-            "Adding the salt before hashing makes matching attacks harder."
-        )
-
-
-# -----------------------------
-# Experiment 4: Certificate and PKI
-# -----------------------------
-with st.expander("Experiment 4: SSL/TLS Certificate and Mini PKI"):
-    section_header(
-        "Generate a private key, CSR, and self-signed certificate",
-        "This experiment shows how a food delivery server can create identity material for HTTPS."
-    )
-
-    cn = st.text_input("Common Name (CN)", value="www.quickbite.co.uk")
-    org = st.text_input("Organization (O)", value="QuickBite Food Delivery Ltd")
-    country = st.text_input("Country (C)", value="GB")
-
-    if st.button("1. Generate server key"):
-        code, out, err = run_command(
-            ["openssl", "genpkey", "-algorithm", "RSA", "-out", str(APP_DIR / "server.key"), "-pkeyopt", "rsa_keygen_bits:2048"],
-            cwd=APP_DIR,
-        )
-        if code == 0:
-            st.success("Server private key generated.")
-        else:
-            st.error(err)
-
-    if st.button("2. Create CSR"):
-        subject = f"/CN={cn}/O={org}/C={country}"
-        if not (APP_DIR / "server.key").exists():
-            st.error("Generate the server key first.")
-        else:
-            code, out, err = run_command(
-                ["openssl", "req", "-new", "-key", str(APP_DIR / "server.key"), "-out", str(APP_DIR / "server.csr"), "-subj", subject],
-                cwd=APP_DIR,
-            )
-            if code == 0:
-                st.success("CSR created successfully.")
-            else:
-                st.error(err)
-
-    if st.button("3. Self-sign certificate"):
-        if not (APP_DIR / "server.csr").exists():
-            st.error("Create the CSR first.")
-        else:
-            code, out, err = run_command(
-                ["openssl", "x509", "-req", "-in", str(APP_DIR / "server.csr"), "-signkey", str(APP_DIR / "server.key"), "-out", str(APP_DIR / "server.crt"), "-days", "365"],
-                cwd=APP_DIR,
-            )
-            if code == 0:
-                st.success("Self-signed certificate generated.")
-            else:
-                st.error(err)
-
-    if st.button("4. Inspect certificate"):
-        cert_path = APP_DIR / "server.crt"
-        if not cert_path.exists():
-            st.error("Certificate not found.")
-        else:
-            code, out, err = run_command(
-                ["openssl", "x509", "-in", str(cert_path), "-text", "-noout"],
-                cwd=APP_DIR,
-            )
-            if code == 0:
-                st.text_area("Certificate details", value=out, height=350)
-            else:
-                st.error(err)
-
-    st.markdown(
-        "**What the code does:** `req -new` creates a certificate signing request with the chosen subject fields. "
-        "`x509 -req -signkey` produces a self-signed certificate valid for 365 days."
-    )
-
-
-# -----------------------------
-# Experiment 5: Before vs After Traffic Simulation
-# -----------------------------
-with st.expander("Experiment 5: Plaintext vs Encrypted Traffic Simulation"):
-    section_header(
-        "Simulate what an attacker sees before and after encryption",
-        "This is a simple app-level demonstration. It does not replace Wireshark, but it helps explain the same idea clearly for presentation purposes."
-    )
-
-    traffic_message = st.text_area(
-        "API request example",
-        value="username=jamal&password=MySecret123&token=QB999PAY&order=burger",
-        key="traffic_message"
-    )
-
-    if st.button("Show before and after"):
-        key = base64.urlsafe_b64encode(os.urandom(32))
-        try:
-            from cryptography.fernet import Fernet
+        if st.button("Encrypt File"):
+            key = Fernet.generate_key()
             cipher = Fernet(key)
-            encrypted = cipher.encrypt(traffic_message.encode())
-            decrypted = cipher.decrypt(encrypted).decode()
+            encrypted_data = cipher.encrypt(file_data)
 
-            left, right = st.columns(2)
-            with left:
-                st.write("Without encryption")
-                st.code(traffic_message, language="text")
-            with right:
-                st.write("With encryption")
-                st.code(encrypted.decode(), language="text")
+            st.session_state["aes_key"] = key
+            st.session_state["encrypted_data"] = encrypted_data
 
-            st.write("Decrypted again for verification")
-            st.code(decrypted, language="text")
-        except ImportError:
-            st.error("The 'cryptography' package is not installed. Install it with: pip install cryptography")
+            st.success("File encrypted successfully.")
 
-    st.markdown(
-        "**What the code does:** It creates a random symmetric key, encrypts the message, and shows how the same API data looks unreadable after encryption. "
-        "In your report, you can relate this to HTTPS and TLS protecting traffic in transit."
+        if "aes_key" in st.session_state and st.session_state["aes_key"] is not None:
+            st.download_button(
+                "Download AES Key",
+                data=st.session_state["aes_key"],
+                file_name="FD_aes_key.key",
+                mime="application/octet-stream"
+            )
+
+        if "encrypted_data" in st.session_state and st.session_state["encrypted_data"] is not None:
+            st.subheader("Encrypted Output")
+            st.code(st.session_state["encrypted_data"].decode())
+
+            st.download_button(
+                "Download Encrypted File",
+                data=st.session_state["encrypted_data"],
+                file_name="FD_encrypted_order_data.bin",
+                mime="application/octet-stream"
+            )
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    st.divider()
+    st.subheader("Decrypt Uploaded File")
+
+    encrypted_file = st.file_uploader("Upload encrypted file", type=["bin"], key="enc_file")
+    aes_key_file = st.file_uploader("Upload AES key", type=["key"], key="aes_key")
+
+    if encrypted_file and aes_key_file:
+        encrypted_content = encrypted_file.read()
+        aes_key = aes_key_file.read()
+
+        try:
+            cipher = Fernet(aes_key)
+            decrypted_data = cipher.decrypt(encrypted_content)
+
+            st.success("File decrypted successfully.")
+            st.code(decrypted_data.decode(errors="ignore"))
+
+            st.download_button(
+                "Download Decrypted File",
+                decrypted_data,
+                file_name="FD_decrypted_order_data.txt"
+            )
+
+        except Exception as e:
+            st.error("Decryption failed. Check that the key and encrypted file match.")
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+#RSA Key Management
+#Purpose
+
+#This section proves how FD can generate public/private keys for secure token exchange.
+
+if menu == "RSA Key Management":
+    st.header("Experiment 2: RSA Key Management")
+
+    if st.button("Generate RSA-2048 Key Pair"):
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048
+        )
+
+        public_key = private_key.public_key()
+
+        private_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+
+        public_pem = public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        )
+
+        st.session_state["rsa_private_pem"] = private_pem
+        st.session_state["rsa_public_pem"] = public_pem
+
+        st.success("RSA key pair generated successfully.")
+
+    if (
+        "rsa_public_pem" in st.session_state
+        and st.session_state["rsa_public_pem"] is not None
+        and "rsa_private_pem" in st.session_state
+        and st.session_state["rsa_private_pem"] is not None
+    ):
+        st.subheader("Public Key")
+        st.code(st.session_state["rsa_public_pem"].decode())
+
+        st.download_button(
+            "Download Public Key",
+            data=st.session_state["rsa_public_pem"],
+            file_name="FD_public_key.pem",
+            mime="application/x-pem-file"
+        )
+
+        st.subheader("Private Key")
+        st.code(st.session_state["rsa_private_pem"].decode())
+
+        st.download_button(
+            "Download Private Key",
+            data=st.session_state["rsa_private_pem"],
+            file_name="FD_private_key.pem",
+            mime="application/x-pem-file"
+        )
+    else:
+        st.info("Click 'Generate RSA-2048 Key Pair' to create downloadable keys.")
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+#Experiment 4: Token Encryption and Decryption
+#Purpose
+
+#This simulates encrypting a payment token or API token.
+
+if menu == "RSA Token Encryption":
+    st.header("Experiment 3: RSA Token Encryption")
+
+    token = st.text_input(
+        "Enter fake API/payment token",
+        value="QB-PAYMENT-TOKEN-2026-999"
     )
 
+    public_key_file = st.file_uploader("Upload RSA Public Key", type=["pem"], key="pubkey")
 
-# -----------------------------
-# Report helper
-# -----------------------------
-with st.expander("Report Notes and ISO 27001/27002 Alignment"):
-    st.markdown(
-        "- **Experiment 1 (RSA):** Supports confidentiality and secure key exchange.\n"
-        "- **Experiment 2 (AES):** Supports protection of data at rest.\n"
-        "- **Experiment 3 (Hashing):** Supports secure authentication and password storage.\n"
-        "- **Experiment 4 (PKI):** Supports server identity verification and certificate management.\n"
-        "- **Experiment 5 (Traffic protection):** Supports protection of data in transit and resistance to interception.\n\n"
-        "You can map these to ISO/IEC 27001 and 27002 controls on cryptography, access control, monitoring, secure communication, and information protection."
-    )
+    if public_key_file and st.button("Encrypt Token"):
+        public_key = serialization.load_pem_public_key(public_key_file.read())
 
-    if st.button("Generate experiment timestamp note"):
-        st.write(f"Evidence recorded on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        encrypted_token = public_key.encrypt(
+            token.encode(),
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+
+        st.subheader("Encrypted Token")
+        st.code(encrypted_token.hex())
+
+        st.download_button(
+            "Download Encrypted Token",
+            encrypted_token,
+            file_name="encrypted_token.bin"
+        )
+
+    st.divider()
+    st.subheader("Decrypt Token")
+
+    encrypted_token_file = st.file_uploader("Upload Encrypted Token", type=["bin"], key="encrypted_token")
+    private_key_file = st.file_uploader("Upload RSA Private Key", type=["pem"], key="privatekey")
+
+    if encrypted_token_file and private_key_file and st.button("Decrypt Token"):
+        private_key = serialization.load_pem_private_key(
+            private_key_file.read(),
+            password=None
+        )
+
+        decrypted_token = private_key.decrypt(
+            encrypted_token_file.read(),
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+
+        st.success("Token decrypted successfully.")
+        st.code(decrypted_token.decode())
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#Password Hashing
+#Purpose
+
+#This shows password protection, salting, and avalanche effect.
+
+if menu == "Password Hashing":
+    st.header("Experiment 4: Password Hashing")
+
+    password = st.text_input("Enter password", value="FDLogin2026")
+    changed_password = st.text_input("Enter slightly changed password", value="FDLogin2027")
+
+    if st.button("Generate Hashes"):
+        salt = os.urandom(16)
+
+        sha256_hash = hashlib.sha256(password.encode()).hexdigest()
+        sha512_hash = hashlib.sha512(password.encode()).hexdigest()
+        changed_hash = hashlib.sha256(changed_password.encode()).hexdigest()
+        salted_hash = hashlib.sha256(salt + password.encode()).hexdigest()
+
+        st.subheader("SHA-256")
+        st.code(sha256_hash)
+
+        st.subheader("SHA-512")
+        st.code(sha512_hash)
+
+        st.subheader("Avalanche Effect")
+        st.write("One small change creates a completely different SHA-256 hash.")
+        st.code(changed_hash)
+
+        st.subheader("Salt")
+        st.code(salt.hex())
+
+        st.subheader("Salted SHA-256")
+        st.code(salted_hash)
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+#TLS Certificate Generator
+#Purpose
+
+#This creates server identity files for www.FDDataProtectionLab.co.uk.
+
+if menu == "TLS Certificate":
+    st.header("Experiment 5: TLS Certificate Generator")
+
+    common_name = st.text_input("Common Name", value="www.fddataprotectionlab.co.uk")
+    organisation = st.text_input("Organisation", value="FD Data Protection Lab Ltd")
+    country = st.text_input("Country", value="GB")
+
+    if st.button("Generate TLS Certificate"):
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048
+        )
+
+        subject = issuer = x509.Name([
+            x509.NameAttribute(NameOID.COUNTRY_NAME, country),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, organisation),
+            x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+        ])
+
+        certificate = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(issuer)
+            .public_key(private_key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(datetime.datetime.utcnow())
+            .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=365))
+            .sign(private_key, hashes.SHA256())
+        )
+
+        private_key_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        )
+
+        cert_pem = certificate.public_bytes(serialization.Encoding.PEM)
+
+        st.session_state["tls_private_key_pem"] = private_key_pem
+        st.session_state["tls_cert_pem"] = cert_pem
+
+        st.success("TLS certificate generated successfully.")
+
+    if (
+        "tls_private_key_pem" in st.session_state
+        and st.session_state["tls_private_key_pem"] is not None
+        and "tls_cert_pem" in st.session_state
+        and st.session_state["tls_cert_pem"] is not None
+    ):
+        st.subheader("TLS Certificate")
+        st.code(st.session_state["tls_cert_pem"].decode())
+
+        st.download_button(
+            "Download Server Private Key",
+            data=st.session_state["tls_private_key_pem"],
+            file_name="FD_server_private_key.pem",
+            mime="application/x-pem-file"
+        )
+
+        st.download_button(
+            "Download TLS Certificate",
+            data=st.session_state["tls_cert_pem"],
+            file_name="FD_tls_certificate.crt",
+            mime="application/x-x509-ca-cert"
+        )
+    else:
+        st.info("Click 'Generate TLS Certificate' to create downloadable certificate files.")
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+#ISO 27001/27002 Mapping Section
+
+
+if menu == "ISO Security Mapping":
+    st.header("ISO 27001/27002 Control Mapping")
+
+    st.table({
+        "App Feature": [
+            "AES file encryption",
+            "RSA key generation",
+            "Password hashing",
+            "TLS certificate generation",
+            "Downloadable encrypted files",
+            "Key separation"
+        ],
+        "Security Purpose": [
+            "Protects data at rest",
+            "Supports secure key exchange",
+            "Protects user credentials",
+            "Supports server identity verification",
+            "Creates practical evidence of encryption",
+            "Separates public and private cryptographic material"
+        ],
+        "ISO 27001/27002 Link": [
+            "Cryptography and information protection",
+            "Cryptographic key management",
+            "Access control and authentication",
+            "Secure communication",
+            "Information handling",
+            "Key management and access restriction"
+        ]
+    })
+
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+
+st.markdown("""
+---
+**FD Data Protection Lab**  
+Mian Jamal Shah | CSYM020 Internet Security | University of Northampton
+""")
