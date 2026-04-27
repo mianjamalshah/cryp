@@ -547,4 +547,8 @@ st.markdown("""
 ---
 **FD Data Protection Lab**  
 Mian Jamal Shah | CSYM020 Internet Security | University of Northampton
+<<<<<<< HEAD
 """)
+=======
+""")
+>>>>>>> d29373d9d94a1421c64b5800f2e938e1ccba083a
