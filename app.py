@@ -159,12 +159,18 @@ CSYM020 Internet Security – Data Protection Lab
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
+from cryptography.fernet import Fernet
+import streamlit as st
 
 if menu == "AES Data Protection":
-    st.header("Experiment 1: AES File Encryption")
+    st.header("AES Data Protection")
 
-    uploaded_file = st.file_uploader("Upload customer/order file", type=["txt", "csv"])
+    # -------------------- ENCRYPTION --------------------
+    uploaded_file = st.file_uploader(
+        "Upload customer/order file",
+        type=["txt", "csv"],
+        key="upload_plain_file"
+    )
 
     if uploaded_file:
         file_data = uploaded_file.read()
@@ -177,37 +183,47 @@ if menu == "AES Data Protection":
             cipher = Fernet(key)
             encrypted_data = cipher.encrypt(file_data)
 
-            st.session_state["aes_key"] = key
+            # store safely
+            st.session_state["generated_aes_key"] = key
             st.session_state["encrypted_data"] = encrypted_data
 
             st.success("File encrypted successfully.")
 
-        if "aes_key" in st.session_state and st.session_state["aes_key"] is not None:
-            st.download_button(
-                "Download AES Key",
-                data=st.session_state["aes_key"],
-                file_name="FD_aes_key.key",
-                mime="application/octet-stream"
-            )
+    # -------------------- DOWNLOADS --------------------
+    if "generated_aes_key" in st.session_state:
+        st.download_button(
+            "Download AES Key",
+            data=st.session_state["generated_aes_key"],
+            file_name="FD_aes_key.key",
+            mime="application/octet-stream"
+        )
 
-        if "encrypted_data" in st.session_state and st.session_state["encrypted_data"] is not None:
-            st.subheader("Encrypted Output")
-            st.code(st.session_state["encrypted_data"].decode())
+    if "encrypted_data" in st.session_state:
+        st.subheader("Encrypted Output")
+        st.code(st.session_state["encrypted_data"].decode())
 
-            st.download_button(
-                "Download Encrypted File",
-                data=st.session_state["encrypted_data"],
-                file_name="FD_encrypted_order_data.bin",
-                mime="application/octet-stream"
-            )
+        st.download_button(
+            "Download Encrypted File",
+            data=st.session_state["encrypted_data"],
+            file_name="FD_encrypted_order_data.bin",
+            mime="application/octet-stream"
+        )
 
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
+    # -------------------- DECRYPTION --------------------
     st.divider()
-    st.subheader("Decrypt Uploaded File")
+    st.subheader("Decrypt File")
 
-    encrypted_file = st.file_uploader("Upload encrypted file", type=["bin"], key="enc_file")
-    aes_key_file = st.file_uploader("Upload AES key", type=["key"], key="aes_key")
+    encrypted_file = st.file_uploader(
+        "Upload encrypted file",
+        type=["bin"],
+        key="uploaded_encrypted_file"
+    )
+
+    aes_key_file = st.file_uploader(
+        "Upload AES key",
+        type=["key"],
+        key="uploaded_aes_key"
+    )
 
     if encrypted_file and aes_key_file:
         encrypted_content = encrypted_file.read()
@@ -222,12 +238,14 @@ if menu == "AES Data Protection":
 
             st.download_button(
                 "Download Decrypted File",
-                decrypted_data,
-                file_name="FD_decrypted_order_data.txt"
+                data=decrypted_data,
+                file_name="FD_decrypted_data.txt",
+                mime="text/plain"
             )
 
-        except Exception as e:
-            st.error("Decryption failed. Check that the key and encrypted file match.")
+        except Exception:
+            st.error("Decryption failed. Make sure the AES key matches the encrypted file.")
+
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
