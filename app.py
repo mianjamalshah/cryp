@@ -546,5 +546,6 @@ if menu == "ISO Security Mapping":
 st.markdown("""
 ---
 **FD Data Protection Lab**  
-Mian Jamal Shah | CSYM020 Internet Security | University of Northampton
+Mian Jamal Shah | CSYM020 Internet Security | University of Northampton | copyrights - 2026
+<<<<<<< HEAD
 """)
