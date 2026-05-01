@@ -539,7 +539,149 @@ if menu == "ISO Security Mapping":
 
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+import streamlit as st
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+import hashlib
+import base64
+import os
 
+# ==============================
+# Research Experiments Section
+# ==============================
+
+if menu == "Research Experiments":
+
+    st.title("🔬 Research Experiments (CSYM020)")
+    st.write("This section demonstrates practical cryptographic experiments supporting the research paper.")
+
+    experiment = st.selectbox(
+        "Select Experiment",
+        [
+            "AES File Encryption",
+            "RSA Token Encryption",
+            "Password Hashing",
+            "TLS Certificate Generation",
+            "Secure Messaging (E2EE Simulation)"
+        ]
+    )
+
+    # ==============================
+    # 1. AES FILE ENCRYPTION
+    # ==============================
+    if experiment == "AES File Encryption":
+
+        st.subheader("Experiment 1: AES-256 File Encryption")
+        uploaded_file = st.file_uploader("Upload file", type=["txt", "csv"])
+
+        if uploaded_file:
+            data = uploaded_file.read()
+
+            key = get_random_bytes(32)
+            cipher = AES.new(key, AES.MODE_GCM)
+
+            ciphertext, tag = cipher.encrypt_and_digest(data)
+
+            st.success("File Encrypted Successfully")
+
+            st.download_button("Download Encrypted File", ciphertext)
+            st.download_button("Download Key", key)
+
+    # ==============================
+    # 2. RSA TOKEN ENCRYPTION
+    # ==============================
+    elif experiment == "RSA Token Encryption":
+
+        st.subheader("Experiment 2: RSA Token Encryption")
+
+        token = st.text_input("Enter fake API/payment token")
+
+        if st.button("Generate RSA Keys"):
+            key = RSA.generate(2048)
+            private_key = key.export_key()
+            public_key = key.publickey().export_key()
+
+            st.session_state.public_key = public_key
+            st.session_state.private_key = private_key
+
+            st.success("Keys Generated")
+
+            st.download_button("Download Public Key", public_key)
+            st.download_button("Download Private Key", private_key)
+
+        if token and "public_key" in st.session_state:
+            rsa_key = RSA.import_key(st.session_state.public_key)
+            cipher = PKCS1_OAEP.new(rsa_key)
+
+            encrypted_token = cipher.encrypt(token.encode())
+
+            st.write("Encrypted Token:")
+            st.code(base64.b64encode(encrypted_token).decode())
+
+    # ==============================
+    # 3. PASSWORD HASHING
+    # ==============================
+    elif experiment == "Password Hashing":
+
+        st.subheader("Experiment 3: Password Hashing (SHA-256 + Salt)")
+
+        password = st.text_input("Enter Password", type="password")
+
+        if password:
+            salt = os.urandom(16)
+            hashed = hashlib.sha256(salt + password.encode()).hexdigest()
+
+            st.write("Salt:", salt.hex())
+            st.write("Hashed Password:", hashed)
+
+    # ==============================
+    # 4. TLS CERTIFICATE GENERATION
+    # ==============================
+    elif experiment == "TLS Certificate Generation":
+
+        st.subheader("Experiment 4: TLS Certificate Simulation")
+
+        st.write("Use OpenSSL command below in terminal:")
+
+        st.code("""
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes
+        """)
+
+        st.info("This demonstrates secure HTTPS communication setup.")
+
+    # ==============================
+    # 5. SECURE MESSAGING (E2EE)
+    # ==============================
+    elif experiment == "Secure Messaging (E2EE Simulation)":
+
+        st.subheader("Experiment 5: Secure Messaging Simulation")
+
+        message = st.text_area("Enter Message")
+
+        if st.button("Encrypt Message"):
+            key = get_random_bytes(32)
+            cipher = AES.new(key, AES.MODE_GCM)
+
+            ciphertext, tag = cipher.encrypt_and_digest(message.encode())
+
+            st.session_state.msg_key = key
+            st.session_state.msg_cipher = ciphertext
+
+            st.write("Encrypted Message:")
+            st.code(base64.b64encode(ciphertext).decode())
+
+        if st.button("Decrypt Message"):
+            if "msg_key" in st.session_state:
+                cipher = AES.new(st.session_state.msg_key, AES.MODE_GCM)
+                decrypted = cipher.decrypt(st.session_state.msg_cipher)
+
+                st.success("Decrypted Message:")
+                st.write(decrypted.decode())
+
+
+#---------------------------------------------------------------------------------------------------------
 
 
 
