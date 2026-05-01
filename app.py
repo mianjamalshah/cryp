@@ -5,8 +5,6 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 from Crypto.Cipher import AES, PKCS1_OAEP
-from Crypto.Random import get_random_bytes
-from Crypto.PublicKey import RSA
 import hashlib
 import os
 import datetime
@@ -652,29 +650,45 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -node
     # ==============================
     elif experiment == "Secure Messaging (E2EE Simulation)":
 
-        st.subheader("Experiment 5: Secure Messaging Simulation")
+    st.subheader("Experiment 5: Secure Messaging Simulation")
 
-        message = st.text_area("Enter Message")
+    message = st.text_area("Enter Message")
 
-        if st.button("Encrypt Message"):
-            key = get_random_bytes(32)
-            cipher = AES.new(key, AES.MODE_GCM)
+    if st.button("Encrypt Message"):
+        key = get_random_bytes(32)
+        cipher = AES.new(key, AES.MODE_GCM)
 
-            ciphertext, tag = cipher.encrypt_and_digest(message.encode())
+        ciphertext, tag = cipher.encrypt_and_digest(message.encode())
 
-            st.session_state.msg_key = key
-            st.session_state.msg_cipher = ciphertext
+        st.session_state.msg_key = key
+        st.session_state.msg_nonce = cipher.nonce
+        st.session_state.msg_tag = tag
+        st.session_state.msg_cipher = ciphertext
 
-            st.write("Encrypted Message:")
-            st.code(base64.b64encode(ciphertext).decode())
+        st.write("Encrypted Message:")
+        st.code(base64.b64encode(ciphertext).decode())
 
-        if st.button("Decrypt Message"):
-            if "msg_key" in st.session_state:
-                cipher = AES.new(st.session_state.msg_key, AES.MODE_GCM)
-                decrypted = cipher.decrypt(st.session_state.msg_cipher)
+    if st.button("Decrypt Message"):
+        if all(k in st.session_state for k in ["msg_key", "msg_nonce", "msg_tag", "msg_cipher"]):
+            try:
+                cipher = AES.new(
+                    st.session_state.msg_key,
+                    AES.MODE_GCM,
+                    nonce=st.session_state.msg_nonce
+                )
+
+                decrypted = cipher.decrypt_and_verify(
+                    st.session_state.msg_cipher,
+                    st.session_state.msg_tag
+                )
 
                 st.success("Decrypted Message:")
-                st.write(decrypted.decode())
+                st.write(decrypted.decode("utf-8"))
+
+            except Exception as e:
+                st.error("Decryption failed. Encrypt the message again first.")
+        else:
+            st.warning("Please encrypt a message first.")
 
 
 #---------------------------------------------------------------------------------------------------------
