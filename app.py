@@ -4,11 +4,17 @@ from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography import x509
 from cryptography.x509.oid import NameOID
+
 from Crypto.Cipher import AES, PKCS1_OAEP
+from Crypto.Random import get_random_bytes
+from Crypto.PublicKey import RSA
+
 import hashlib
 import os
 import datetime
 import base64
+
+
 st.set_page_config(
     page_title="FD Data Protection Lab",
     page_icon="🔐",
@@ -140,15 +146,16 @@ CSYM020 Internet Security – Data Protection Lab
     """)
 
     st.markdown("""
-    ### Implemented Security Modules
+### Implemented Security Modules
 
-    1. **AES Data Protection** - encrypt and decrypt customer/order files  
-    2. **RSA Key Management** - generate public and private keys  
-    3. **RSA Token Encryption** - protect payment/API tokens  
-    4. **Password Hashing** - demonstrate SHA-256, SHA-512, salting, and avalanche effect  
-    5. **TLS Certificate** - generate certificate files for server identity  
-    6. **ISO Security Mapping** - map practical features to ISO 27001/27002 controls  
-    """)
+1. **AES Data Protection** - encrypt and decrypt customer/order files  
+2. **RSA Key Management** - generate public and private keys  
+3. **RSA Token Encryption** - protect payment/API tokens  
+4. **Password Hashing** - demonstrate SHA-256, SHA-512, salting, and avalanche effect  
+5. **TLS Certificate** - generate certificate files for server identity  
+6. **ISO Security Mapping** - map practical features to ISO 27001/27002 controls  
+7. **Research Experiments** - practical experiments aligned with the research paper  
+""")
 
     st.info("Use the sidebar to select a security module.")
 
@@ -541,14 +548,17 @@ if menu == "ISO Security Mapping":
 
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 # ==============================
 # Research Experiments Section
 # ==============================
+
 if menu == "Research Experiments":
 
     st.title("🔬 Research Experiments (CSYM020)")
-    st.write("This section demonstrates practical cryptographic experiments supporting the research paper.")
+    st.write("""
+    This section supports the research paper on End-to-End Encryption for Secure Online Food Delivery Applications.
+    Each experiment demonstrates a cryptographic control used to protect customer, driver, restaurant, and order data.
+    """)
 
     experiment = st.selectbox(
         "Select Experiment",
@@ -561,116 +571,353 @@ if menu == "Research Experiments":
         ]
     )
 
+    # ==============================
+    # 1. AES FILE ENCRYPTION
+    # ==============================
     if experiment == "AES File Encryption":
-        st.subheader("Experiment 1: AES-256 File Encryption")
 
-        uploaded_file = st.file_uploader("Upload file", type=["txt", "csv"], key="research_aes_upload")
+        st.subheader("Experiment 1: AES-256-GCM File Encryption")
+        st.info("Research purpose: This experiment demonstrates data-at-rest protection for customer and order files.")
+
+        uploaded_file = st.file_uploader(
+            "Upload customer/order file",
+            type=["txt", "csv"],
+            key="research_aes_upload"
+        )
 
         if uploaded_file:
             data = uploaded_file.read()
-            key = get_random_bytes(32)
-            cipher = AES.new(key, AES.MODE_GCM)
-            ciphertext, tag = cipher.encrypt_and_digest(data)
 
-            st.success("File encrypted successfully.")
-            st.code(base64.b64encode(ciphertext).decode())
+            st.write("Original File Content:")
+            st.code(data.decode(errors="ignore"))
 
-            st.download_button("Download Encrypted File", ciphertext, file_name="research_encrypted_file.bin")
-            st.download_button("Download AES Key", key, file_name="research_aes_key.key")
+            if st.button("Encrypt File", key="research_encrypt_file_btn"):
+                key = get_random_bytes(32)  # 256-bit key
+                cipher = AES.new(key, AES.MODE_GCM)
+                ciphertext, tag = cipher.encrypt_and_digest(data)
 
+                st.session_state["research_aes_key"] = key
+                st.session_state["research_aes_nonce"] = cipher.nonce
+                st.session_state["research_aes_tag"] = tag
+                st.session_state["research_aes_ciphertext"] = ciphertext
+
+                st.success("File encrypted successfully using AES-256-GCM.")
+
+        if all(k in st.session_state for k in [
+            "research_aes_key",
+            "research_aes_nonce",
+            "research_aes_tag",
+            "research_aes_ciphertext"
+        ]):
+            st.write("Encrypted File Output:")
+            st.code(base64.b64encode(st.session_state["research_aes_ciphertext"]).decode())
+
+            st.download_button(
+                "Download Encrypted File",
+                data=st.session_state["research_aes_ciphertext"],
+                file_name="research_encrypted_file.bin",
+                mime="application/octet-stream"
+            )
+
+            st.download_button(
+                "Download AES Key",
+                data=st.session_state["research_aes_key"],
+                file_name="research_aes_key.key",
+                mime="application/octet-stream"
+            )
+
+            st.download_button(
+                "Download AES Nonce",
+                data=st.session_state["research_aes_nonce"],
+                file_name="research_aes_nonce.bin",
+                mime="application/octet-stream"
+            )
+
+            st.download_button(
+                "Download AES Tag",
+                data=st.session_state["research_aes_tag"],
+                file_name="research_aes_tag.bin",
+                mime="application/octet-stream"
+            )
+
+            if st.button("Decrypt File", key="research_decrypt_file_btn"):
+                try:
+                    cipher = AES.new(
+                        st.session_state["research_aes_key"],
+                        AES.MODE_GCM,
+                        nonce=st.session_state["research_aes_nonce"]
+                    )
+
+                    decrypted_data = cipher.decrypt_and_verify(
+                        st.session_state["research_aes_ciphertext"],
+                        st.session_state["research_aes_tag"]
+                    )
+
+                    st.success("File decrypted successfully.")
+                    st.code(decrypted_data.decode(errors="ignore"))
+
+                except Exception:
+                    st.error("Decryption failed. The key, nonce, or tag is incorrect.")
+
+    # ==============================
+    # 2. RSA TOKEN ENCRYPTION
+    # ==============================
     elif experiment == "RSA Token Encryption":
+
         st.subheader("Experiment 2: RSA Token Encryption")
+        st.info("Research purpose: This experiment demonstrates how payment tokens or API tokens can be protected using public-key cryptography.")
 
-        token = st.text_input("Enter fake API/payment token", value="QB-PAYMENT-TOKEN-2026-999")
+        token = st.text_input(
+            "Enter fake API/payment token",
+            value="QB-PAYMENT-TOKEN-2026-999",
+            key="research_token_input"
+        )
 
-        if st.button("Generate RSA Keys"):
+        if st.button("Generate RSA Keys", key="research_generate_rsa_btn"):
             key = RSA.generate(2048)
             private_key = key.export_key()
             public_key = key.publickey().export_key()
 
-            st.session_state.research_public_key = public_key
-            st.session_state.research_private_key = private_key
+            st.session_state["research_public_key"] = public_key
+            st.session_state["research_private_key"] = private_key
 
-            st.success("RSA keys generated successfully.")
-            st.download_button("Download Public Key", public_key, file_name="research_public_key.pem")
-            st.download_button("Download Private Key", private_key, file_name="research_private_key.pem")
+            st.success("RSA-2048 key pair generated successfully.")
 
-        if token and "research_public_key" in st.session_state:
-            rsa_key = RSA.import_key(st.session_state.research_public_key)
-            cipher = PKCS1_OAEP.new(rsa_key)
-            encrypted_token = cipher.encrypt(token.encode())
+        if all(k in st.session_state for k in ["research_public_key", "research_private_key"]):
+            st.subheader("Public Key")
+            st.code(st.session_state["research_public_key"].decode())
 
-            st.write("Encrypted Token:")
-            st.code(base64.b64encode(encrypted_token).decode())
+            st.download_button(
+                "Download Public Key",
+                data=st.session_state["research_public_key"],
+                file_name="research_public_key.pem",
+                mime="application/x-pem-file"
+            )
 
+            st.subheader("Private Key")
+            st.code(st.session_state["research_private_key"].decode())
+
+            st.download_button(
+                "Download Private Key",
+                data=st.session_state["research_private_key"],
+                file_name="research_private_key.pem",
+                mime="application/x-pem-file"
+            )
+
+            if st.button("Encrypt Token", key="research_encrypt_token_btn"):
+                public_key = RSA.import_key(st.session_state["research_public_key"])
+                cipher = PKCS1_OAEP.new(public_key)
+                encrypted_token = cipher.encrypt(token.encode())
+
+                st.session_state["research_encrypted_token"] = encrypted_token
+
+                st.success("Token encrypted successfully.")
+                st.code(base64.b64encode(encrypted_token).decode())
+
+            if "research_encrypted_token" in st.session_state:
+                st.download_button(
+                    "Download Encrypted Token",
+                    data=st.session_state["research_encrypted_token"],
+                    file_name="research_encrypted_token.bin",
+                    mime="application/octet-stream"
+                )
+
+                if st.button("Decrypt Token", key="research_decrypt_token_btn"):
+                    try:
+                        private_key = RSA.import_key(st.session_state["research_private_key"])
+                        cipher = PKCS1_OAEP.new(private_key)
+
+                        decrypted_token = cipher.decrypt(st.session_state["research_encrypted_token"])
+
+                        st.success("Token decrypted successfully.")
+                        st.code(decrypted_token.decode())
+
+                    except Exception:
+                        st.error("Token decryption failed.")
+
+    # ==============================
+    # 3. PASSWORD HASHING
+    # ==============================
     elif experiment == "Password Hashing":
-        st.subheader("Experiment 3: Password Hashing (SHA-256 + Salt)")
 
-        password = st.text_input("Enter Password", type="password", key="research_password")
+        st.subheader("Experiment 3: Password Hashing with Salt")
+        st.info("Research purpose: This experiment demonstrates how user passwords should be stored as salted hashes instead of plain text.")
 
-        if password:
+        password = st.text_input(
+            "Enter password",
+            value="FDLogin2026",
+            type="password",
+            key="research_password"
+        )
+
+        changed_password = st.text_input(
+            "Enter slightly changed password",
+            value="FDLogin2027",
+            type="password",
+            key="research_changed_password"
+        )
+
+        if st.button("Generate Password Hashes", key="research_hash_btn"):
             salt = os.urandom(16)
-            hashed = hashlib.sha256(salt + password.encode()).hexdigest()
 
-            st.write("Salt:")
+            sha256_hash = hashlib.sha256(password.encode()).hexdigest()
+            salted_hash = hashlib.sha256(salt + password.encode()).hexdigest()
+            changed_hash = hashlib.sha256(changed_password.encode()).hexdigest()
+
+            st.subheader("SHA-256 Hash")
+            st.code(sha256_hash)
+
+            st.subheader("Salt")
             st.code(salt.hex())
 
-            st.write("Hashed Password:")
-            st.code(hashed)
+            st.subheader("Salted SHA-256 Hash")
+            st.code(salted_hash)
 
+            st.subheader("Avalanche Effect")
+            st.write("A small change in the password creates a completely different hash.")
+            st.code(changed_hash)
+
+    # ==============================
+    # 4. TLS CERTIFICATE GENERATION
+    # ==============================
     elif experiment == "TLS Certificate Generation":
-        st.subheader("Experiment 4: TLS Certificate Simulation")
 
-        st.write("Use this OpenSSL command in terminal:")
+        st.subheader("Experiment 4: TLS Certificate Generation")
+        st.info("Research purpose: This experiment demonstrates server identity and secure communication setup for HTTPS.")
 
-        st.code("""
+        common_name = st.text_input(
+            "Common Name",
+            value="www.fddataprotectionlab.co.uk",
+            key="research_tls_cn"
+        )
+
+        organisation = st.text_input(
+            "Organisation",
+            value="FD Data Protection Lab Ltd",
+            key="research_tls_org"
+        )
+
+        country = st.text_input(
+            "Country",
+            value="GB",
+            key="research_tls_country"
+        )
+
+        if st.button("Generate Research TLS Certificate", key="research_tls_btn"):
+            private_key = rsa.generate_private_key(
+                public_exponent=65537,
+                key_size=2048
+            )
+
+            subject = issuer = x509.Name([
+                x509.NameAttribute(NameOID.COUNTRY_NAME, country),
+                x509.NameAttribute(NameOID.ORGANIZATION_NAME, organisation),
+                x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+            ])
+
+            certificate = (
+                x509.CertificateBuilder()
+                .subject_name(subject)
+                .issuer_name(issuer)
+                .public_key(private_key.public_key())
+                .serial_number(x509.random_serial_number())
+                .not_valid_before(datetime.datetime.utcnow())
+                .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=365))
+                .sign(private_key, hashes.SHA256())
+            )
+
+            private_key_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+
+            cert_pem = certificate.public_bytes(serialization.Encoding.PEM)
+
+            st.session_state["research_tls_private_key"] = private_key_pem
+            st.session_state["research_tls_certificate"] = cert_pem
+
+            st.success("TLS certificate generated successfully.")
+
+        if all(k in st.session_state for k in ["research_tls_private_key", "research_tls_certificate"]):
+            st.subheader("TLS Certificate")
+            st.code(st.session_state["research_tls_certificate"].decode())
+
+            st.download_button(
+                "Download Research Server Private Key",
+                data=st.session_state["research_tls_private_key"],
+                file_name="research_server_private_key.pem",
+                mime="application/x-pem-file"
+            )
+
+            st.download_button(
+                "Download Research TLS Certificate",
+                data=st.session_state["research_tls_certificate"],
+                file_name="research_tls_certificate.crt",
+                mime="application/x-x509-ca-cert"
+            )
+
+            st.subheader("Equivalent OpenSSL Command")
+            st.code("""
 openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes
 """)
 
-        st.info("This demonstrates secure HTTPS communication setup.")
-
+    # ==============================
+    # 5. SECURE MESSAGING
+    # ==============================
     elif experiment == "Secure Messaging (E2EE Simulation)":
+
         st.subheader("Experiment 5: Secure Messaging Simulation")
+        st.info("Research purpose: This experiment simulates encrypted communication between a customer and a delivery driver.")
 
-        message = st.text_area("Enter Message", key="research_message")
+        message = st.text_area(
+            "Enter customer-driver message",
+            value="Hi driver, please leave the order at the reception.",
+            key="research_message"
+        )
 
-        if st.button("Encrypt Message"):
-            key = get_random_bytes(32)
-            cipher = AES.new(key, AES.MODE_GCM)
-
-            ciphertext, tag = cipher.encrypt_and_digest(message.encode())
-
-            st.session_state.research_msg_key = key
-            st.session_state.research_msg_nonce = cipher.nonce
-            st.session_state.research_msg_tag = tag
-            st.session_state.research_msg_cipher = ciphertext
-
-            st.write("Encrypted Message:")
-            st.code(base64.b64encode(ciphertext).decode())
-
-        if st.button("Decrypt Message"):
-            if all(k in st.session_state for k in [
-                "research_msg_key",
-                "research_msg_nonce",
-                "research_msg_tag",
-                "research_msg_cipher"
-            ]):
-                cipher = AES.new(
-                    st.session_state.research_msg_key,
-                    AES.MODE_GCM,
-                    nonce=st.session_state.research_msg_nonce
-                )
-
-                decrypted = cipher.decrypt_and_verify(
-                    st.session_state.research_msg_cipher,
-                    st.session_state.research_msg_tag
-                )
-
-                st.success("Decrypted Message:")
-                st.write(decrypted.decode("utf-8"))
+        if st.button("Encrypt Message", key="research_encrypt_msg_btn"):
+            if message.strip() == "":
+                st.warning("Please enter a message before encryption.")
             else:
-                st.warning("Please encrypt a message first.")
+                key = get_random_bytes(32)
+                cipher = AES.new(key, AES.MODE_GCM)
 
+                ciphertext, tag = cipher.encrypt_and_digest(message.encode("utf-8"))
+
+                st.session_state["research_msg_key"] = key
+                st.session_state["research_msg_nonce"] = cipher.nonce
+                st.session_state["research_msg_tag"] = tag
+                st.session_state["research_msg_cipher"] = ciphertext
+
+                st.success("Message encrypted successfully.")
+                st.write("Encrypted Message:")
+                st.code(base64.b64encode(ciphertext).decode())
+
+        if all(k in st.session_state for k in [
+            "research_msg_key",
+            "research_msg_nonce",
+            "research_msg_tag",
+            "research_msg_cipher"
+        ]):
+            if st.button("Decrypt Message", key="research_decrypt_msg_btn"):
+                try:
+                    cipher = AES.new(
+                        st.session_state["research_msg_key"],
+                        AES.MODE_GCM,
+                        nonce=st.session_state["research_msg_nonce"]
+                    )
+
+                    decrypted = cipher.decrypt_and_verify(
+                        st.session_state["research_msg_cipher"],
+                        st.session_state["research_msg_tag"]
+                    )
+
+                    st.success("Decrypted Message:")
+                    st.write(decrypted.decode("utf-8"))
+
+                except Exception:
+                    st.error("Decryption failed. Message integrity check failed.")
 #---------------------------------------------------------------------------------------------------------
 
 
