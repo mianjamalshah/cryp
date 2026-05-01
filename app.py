@@ -14,6 +14,12 @@ import os
 import datetime
 import base64
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM, ChaCha20Poly1305
+from cryptography.hazmat.primitives.asymmetric import ed25519, x25519
+from cryptography.hazmat.primitives import hmac
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from argon2 import PasswordHasher
+
 
 st.set_page_config(
     page_title="FD Data Protection Lab",
@@ -126,7 +132,8 @@ menu = st.sidebar.radio(
         "Password Hashing",
         "TLS Certificate",
         "ISO Security Mapping",
-        "Research Experiments"
+        "Research Experiments",
+        "Advanced Cryptography"
     ]
 )
 
@@ -918,8 +925,261 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -node
 
                 except Exception:
                     st.error("Decryption failed. Message integrity check failed.")
-#---------------------------------------------------------------------------------------------------------
 
+
+# ==============================
+# Advanced Cryptography Section
+# ==============================
+
+if menu == "Advanced Cryptography":
+
+    st.title("Advanced Cryptography Experiments")
+    st.write("""
+    This section demonstrates stronger and more modern cryptographic features that can improve
+    the security design of a food delivery application.
+    """)
+
+    advanced_exp = st.selectbox(
+        "Select Advanced Experiment",
+        [
+            "AES-GCM vs ChaCha20-Poly1305",
+            "Argon2id Password Hashing",
+            "Ed25519 Digital Signature",
+            "HMAC Message Integrity",
+            "X25519 Key Exchange"
+        ]
+    )
+
+    # ==============================
+    # 1. AES-GCM vs ChaCha20-Poly1305
+    # ==============================
+    if advanced_exp == "AES-GCM vs ChaCha20-Poly1305":
+
+        st.subheader("AES-GCM vs ChaCha20-Poly1305")
+        st.info("""
+        Research purpose: This compares two authenticated encryption methods.
+        AES-GCM is widely used for secure data encryption, while ChaCha20-Poly1305 is commonly used
+        where fast software-based encryption is useful, such as mobile environments.
+        """)
+
+        message = st.text_area(
+            "Enter message to encrypt",
+            value="Customer order: Burger meal, delivery to reception.",
+            key="advanced_aead_message"
+        )
+
+        if st.button("Run AEAD Encryption Comparison", key="run_aead_comparison"):
+            data = message.encode("utf-8")
+            aad = b"food-delivery-associated-data"
+
+            # AES-GCM
+            aes_key = AESGCM.generate_key(bit_length=256)
+            aesgcm = AESGCM(aes_key)
+            aes_nonce = os.urandom(12)
+            aes_ciphertext = aesgcm.encrypt(aes_nonce, data, aad)
+            aes_plaintext = aesgcm.decrypt(aes_nonce, aes_ciphertext, aad)
+
+            # ChaCha20-Poly1305
+            chacha_key = ChaCha20Poly1305.generate_key()
+            chacha = ChaCha20Poly1305(chacha_key)
+            chacha_nonce = os.urandom(12)
+            chacha_ciphertext = chacha.encrypt(chacha_nonce, data, aad)
+            chacha_plaintext = chacha.decrypt(chacha_nonce, chacha_ciphertext, aad)
+
+            st.success("Both encryption methods completed successfully.")
+
+            st.subheader("AES-GCM Encrypted Output")
+            st.code(base64.b64encode(aes_ciphertext).decode())
+
+            st.write("AES-GCM Decrypted Message:")
+            st.code(aes_plaintext.decode("utf-8"))
+
+            st.subheader("ChaCha20-Poly1305 Encrypted Output")
+            st.code(base64.b64encode(chacha_ciphertext).decode())
+
+            st.write("ChaCha20-Poly1305 Decrypted Message:")
+            st.code(chacha_plaintext.decode("utf-8"))
+
+    # ==============================
+    # 2. Argon2id Password Hashing
+    # ==============================
+    elif advanced_exp == "Argon2id Password Hashing":
+
+        st.subheader("Argon2id Password Hashing")
+        st.info("""
+        Research purpose: This demonstrates stronger password storage than basic SHA-256 hashing.
+        Argon2id is designed to slow down password cracking attempts.
+        """)
+
+        password = st.text_input(
+            "Enter password",
+            value="FDLogin2026!",
+            type="password",
+            key="argon2_password"
+        )
+
+        if st.button("Hash Password with Argon2id", key="argon2_hash_btn"):
+            ph = PasswordHasher(
+                time_cost=2,
+                memory_cost=19456,
+                parallelism=1
+            )
+
+            password_hash = ph.hash(password)
+
+            st.success("Password hashed successfully using Argon2id.")
+            st.subheader("Argon2id Hash")
+            st.code(password_hash)
+
+            try:
+                ph.verify(password_hash, password)
+                st.success("Password verification successful.")
+            except Exception:
+                st.error("Password verification failed.")
+
+    # ==============================
+    # 3. Ed25519 Digital Signature
+    # ==============================
+    elif advanced_exp == "Ed25519 Digital Signature":
+
+        st.subheader("Ed25519 Digital Signature")
+        st.info("""
+        Research purpose: This demonstrates how a restaurant, driver, or backend service can digitally sign
+        a message so the receiver can verify authenticity and integrity.
+        """)
+
+        message = st.text_area(
+            "Enter message to sign",
+            value="Order #FD1029 has been accepted by the restaurant.",
+            key="signature_message"
+        )
+
+        if st.button("Generate and Verify Signature", key="signature_btn"):
+            private_key = ed25519.Ed25519PrivateKey.generate()
+            public_key = private_key.public_key()
+
+            data = message.encode("utf-8")
+            signature = private_key.sign(data)
+
+            public_key.verify(signature, data)
+
+            st.success("Signature generated and verified successfully.")
+
+            st.subheader("Digital Signature")
+            st.code(base64.b64encode(signature).decode())
+
+            public_bytes = public_key.public_bytes(
+                encoding=serialization.Encoding.Raw,
+                format=serialization.PublicFormat.Raw
+            )
+
+            st.subheader("Public Verification Key")
+            st.code(base64.b64encode(public_bytes).decode())
+
+    # ==============================
+    # 4. HMAC Message Integrity
+    # ==============================
+    elif advanced_exp == "HMAC Message Integrity":
+
+        st.subheader("HMAC Message Integrity")
+        st.info("""
+        Research purpose: This demonstrates how a backend service can detect whether order data has been modified.
+        If the message changes, the HMAC verification fails.
+        """)
+
+        message = st.text_area(
+            "Enter order message",
+            value="Order total: £18.50 | Address: Northampton",
+            key="hmac_message"
+        )
+
+        tampered_message = st.text_area(
+            "Enter tampered message for testing",
+            value="Order total: £81.50 | Address: Northampton",
+            key="hmac_tampered_message"
+        )
+
+        if st.button("Generate and Verify HMAC", key="hmac_btn"):
+            key = os.urandom(32)
+
+            h = hmac.HMAC(key, hashes.SHA256())
+            h.update(message.encode("utf-8"))
+            tag = h.finalize()
+
+            st.subheader("Original HMAC Tag")
+            st.code(base64.b64encode(tag).decode())
+
+            # Verify original message
+            h_verify = hmac.HMAC(key, hashes.SHA256())
+            h_verify.update(message.encode("utf-8"))
+
+            try:
+                h_verify.verify(tag)
+                st.success("Original message verified successfully.")
+            except Exception:
+                st.error("Original message verification failed.")
+
+            # Verify tampered message
+            h_tampered = hmac.HMAC(key, hashes.SHA256())
+            h_tampered.update(tampered_message.encode("utf-8"))
+
+            try:
+                h_tampered.verify(tag)
+                st.warning("Tampered message passed verification. This should not happen.")
+            except Exception:
+                st.error("Tampered message rejected. Integrity protection worked.")
+
+    # ==============================
+    # 5. X25519 Key Exchange
+    # ==============================
+    elif advanced_exp == "X25519 Key Exchange":
+
+        st.subheader("X25519 Key Exchange Simulation")
+        st.info("""
+        Research purpose: This simulates how two parties, such as a customer and driver,
+        can independently create the same shared secret without sending the secret itself.
+        """)
+
+        if st.button("Generate Shared Secret", key="x25519_btn"):
+            customer_private_key = x25519.X25519PrivateKey.generate()
+            driver_private_key = x25519.X25519PrivateKey.generate()
+
+            customer_public_key = customer_private_key.public_key()
+            driver_public_key = driver_private_key.public_key()
+
+            customer_shared_secret = customer_private_key.exchange(driver_public_key)
+            driver_shared_secret = driver_private_key.exchange(customer_public_key)
+
+            derived_customer_key = HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"fd-e2ee-session-key"
+            ).derive(customer_shared_secret)
+
+            derived_driver_key = HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=None,
+                info=b"fd-e2ee-session-key"
+            ).derive(driver_shared_secret)
+
+            st.subheader("Customer Derived Session Key")
+            st.code(base64.b64encode(derived_customer_key).decode())
+
+            st.subheader("Driver Derived Session Key")
+            st.code(base64.b64encode(derived_driver_key).decode())
+
+            if derived_customer_key == derived_driver_key:
+                st.success("Key exchange successful. Both parties derived the same session key.")
+            else:
+                st.error("Key exchange failed.")
+
+
+#---------------------------------------------------------------------------------------------------------
+st.markdown("""
+---
+**FD Data Protection Lab**""")
 
 st.markdown("""
 ---

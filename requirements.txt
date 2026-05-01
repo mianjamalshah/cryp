@@ -1,3 +1,4 @@
 streamlit
 cryptography
 pycryptodome
+argon2-cffi
