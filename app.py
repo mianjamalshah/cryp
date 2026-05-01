@@ -4,10 +4,13 @@ from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography import x509
 from cryptography.x509.oid import NameOID
+from Crypto.Cipher import AES, PKCS1_OAEP
+from Crypto.Random import get_random_bytes
+from Crypto.PublicKey import RSA
 import hashlib
 import os
 import datetime
-
+import base64
 st.set_page_config(
     page_title="FD Data Protection Lab",
     page_icon="🔐",
@@ -112,13 +115,14 @@ hr {
 menu = st.sidebar.radio(
     "FD Data Protection Lab",
     [
-         "Home",
+        "Home",
         "AES Data Protection",
         "RSA Key Management",
         "RSA Token Encryption",
         "Password Hashing",
         "TLS Certificate",
-        "ISO Security Mapping"
+        "ISO Security Mapping",
+        "Research Experiments"
     ]
 )
 
@@ -676,10 +680,8 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -node
 #---------------------------------------------------------------------------------------------------------
 
 
-
 st.markdown("""
 ---
 **FD Data Protection Lab**  
 Mian Jamal Shah | CSYM020 Internet Security | University of Northampton | copyrights - 2026
-<<<<<<< HEAD
 """)
