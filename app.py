@@ -121,22 +121,59 @@ hr {
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
+# ---------------- Sidebar Navigation ----------------
+if "main_menu" not in st.session_state:
+    st.session_state.main_menu = "Home"
 
-menu = st.sidebar.radio(
-    "FD Data Protection Lab",
-    [
-        "Home",
-        "AES Data Protection",
-        "RSA Key Management",
-        "RSA Token Encryption",
-        "Password Hashing",
-        "TLS Certificate",
-        "ISO Security Mapping",
-        "Research Experiments",
-        "Advanced Cryptography"
-    ]
-)
+if "extra_menu" not in st.session_state:
+    st.session_state.extra_menu = ""
 
+def clear_extra_menu():
+    st.session_state.extra_menu = ""
+
+with st.sidebar:
+    st.markdown("### FD Data Protection Lab")
+
+    # Main/core modules
+    st.markdown("**Core Security Modules**")
+    st.radio(
+        "Core Modules",
+        [
+            "Home",
+            "AES Data Protection",
+            "RSA Key Management",
+            "RSA Token Encryption",
+            "Password Hashing",
+            "TLS Certificate",
+            "ISO Security Mapping"
+        ],
+        key="main_menu",
+        label_visibility="collapsed",
+        on_change=clear_extra_menu
+    )
+
+    # Divider line
+    st.markdown(
+        "<hr style='margin: 12px 0; border: none; border-top: 1px solid #3f4a50;'>",
+        unsafe_allow_html=True
+    )
+
+    # Research/advanced modules
+    st.markdown("**Research & Advanced**")
+    st.radio(
+        "Research Sections",
+        [
+            "",
+            "Research Experiments",
+            "Advanced Cryptography"
+        ],
+        key="extra_menu",
+        label_visibility="collapsed",
+        format_func=lambda x: "Select section..." if x == "" else x
+    )
+
+# Final active menu
+menu = st.session_state.extra_menu if st.session_state.extra_menu else st.session_state.main_menu
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 if menu == "Home":
     st.markdown("""
@@ -162,6 +199,7 @@ CSYM020 Internet Security – Data Protection Lab
 5. **TLS Certificate** - generate certificate files for server identity  
 6. **ISO Security Mapping** - map practical features to ISO 27001/27002 controls  
 7. **Research Experiments** - practical experiments aligned with the research paper  
+8. **Advanced Cryptography** - modern cryptographic controls such as Argon2id, HMAC, Ed25519, X25519, AES-GCM, and ChaCha20-Poly1305
 """)
 
     st.info("Use the sidebar to select a security module.")
@@ -1183,6 +1221,5 @@ st.markdown("""
 
 st.markdown("""
 ---
-**FD Data Protection Lab**  
 Mian Jamal Shah | CSYM020 Internet Security | University of Northampton | copyrights - 2026
 """)
