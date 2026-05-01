@@ -648,7 +648,7 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -node
     # ==============================
     # 5. SECURE MESSAGING (E2EE)
     # ==============================
-    elif experiment == "Secure Messaging (E2EE Simulation)":
+  elif experiment == "Secure Messaging (E2EE Simulation)":
 
     st.subheader("Experiment 5: Secure Messaging Simulation")
 
@@ -685,11 +685,10 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -node
                 st.success("Decrypted Message:")
                 st.write(decrypted.decode("utf-8"))
 
-            except Exception as e:
+            except Exception:
                 st.error("Decryption failed. Encrypt the message again first.")
         else:
             st.warning("Please encrypt a message first.")
-
 
 #---------------------------------------------------------------------------------------------------------
 
